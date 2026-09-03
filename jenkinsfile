@@ -1,0 +1,133 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_USERNAME = "jkairuthi"
+        BACKEND_IMAGE   = "${DOCKER_USERNAME}/test-backend"
+        FRONTEND_IMAGE  = "${DOCKER_USERNAME}/test-frontend"
+    }
+
+    stages {
+
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Jackline-Kairuthi/Jenkins-project.git'
+            }
+        }
+
+        stage('Install Docker & Docker Compose') {
+            steps {
+                sh '''
+                    set -eux
+                    sudo apt-get update -y
+                    sudo apt-get install -y docker.io
+
+                    sudo mkdir -p /usr/libexec/docker/cli-plugins
+                    sudo curl -SL https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-linux-x86_64 \
+                        -o /usr/libexec/docker/cli-plugins/docker-compose
+                    sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+                '''
+            }
+        }
+
+        stage('Give Jenkins Docker Permission') {
+            steps {
+                sh '''
+                    sudo usermod -aG docker jenkins
+                    sudo systemctl restart docker
+                '''
+            }
+        }
+
+        stage('Verify Docker') {
+            steps {
+                sh '''
+                    docker --version
+                    docker compose version
+                '''
+            }
+        }
+
+        stage('Docker Hub Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Debug Workspace') {
+            steps {
+                sh '''
+                    echo "Workspace structure:"
+                    ls -R .
+                '''
+            }
+        }
+
+        stage('Build Backend Image') {
+            steps {
+                sh '''
+                    docker build -t ${BACKEND_IMAGE}:latest backend
+                '''
+            }
+        }
+
+        stage('Build Frontend Image') {
+            steps {
+                sh '''
+                    docker build -t ${FRONTEND_IMAGE}:latest frontend
+                '''
+            }
+        }
+
+        stage('Push Backend Image') {
+            steps {
+                sh '''
+                    docker push ${BACKEND_IMAGE}:latest
+                '''
+            }
+        }
+
+        stage('Push Frontend Image') {
+            steps {
+                sh '''
+                    docker push ${FRONTEND_IMAGE}:latest
+                '''
+            }
+        }
+
+        stage('Deploy Application') {
+            steps {
+                sh '''
+                    docker compose down || true
+                    docker compose up -d
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''
+                    docker ps
+                    docker images
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline is successful"
+        }
+        failure {
+            echo "Pipeline failed"
+        }
+    }
+}
