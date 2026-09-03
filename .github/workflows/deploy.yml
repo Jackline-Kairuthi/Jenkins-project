@@ -47,3 +47,4 @@ jobs:
 
             echo "Deployment complete. Running containers:"
             docker ps
+            
